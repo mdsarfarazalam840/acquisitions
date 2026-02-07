@@ -1,6 +1,25 @@
 import aj from '../config/arcjet.js'
 import logger from '../config/logger.js'
 import {slidingWindow} from '@arcjet/node'
+
+// Normalize IPv6-mapped IPv4 (::ffff:x.x.x.x) to plain IPv4 
+const normalizeIP = (ip) => { 
+    if (!ip) return ''; 
+    return ip.startsWith('::ffff:') ? ip.replace('::ffff:', '') : ip; };
+
+// Helper to detect local/development IPs
+const isLocalIP = (ip) => {
+    const cleanIP = normalizeIP(ip);
+    return (
+        cleanIP === '127.0.0.1' ||
+        cleanIP === '::1' ||
+        cleanIP === 'localhost' ||
+        cleanIP.startsWith('172.') || // Docker networks
+        cleanIP.startsWith('192.168.') ||
+        cleanIP.startsWith('10.')
+        // ip === 'localhost'
+    );
+};
     
 const securityMiddleware =  async (req, res, next)=> {
     try{
@@ -30,9 +49,12 @@ const securityMiddleware =  async (req, res, next)=> {
         const decision = await client.protect(req);
         
         if(decision.isDenied() && decision.reason.isBot()) {
-            logger.warn('Bot request blocked', {ip : req.ip, userAgent: req.get('User-Agent'), path: req.path});
-            
-            return res.status(403).json({ error: 'Forbidden', message: 'Automated requests are not allowed'});
+            if (isLocalIP(req.ip)) {
+                logger.info('Bot detection skipped for local IP', {ip: req.ip, userAgent: req.get('User-Agent'), path: req.path});
+            } else {
+                logger.warn('Bot request blocked', {ip : req.ip, userAgent: req.get('User-Agent'), path: req.path});
+                return res.status(403).json({ error: 'Forbidden', message: 'Automated requests are not allowed'});
+            }
         }
         
         if(decision.isDenied() && decision.reason.isShield()) {
