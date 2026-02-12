@@ -2,92 +2,99 @@
 
 This file provides guidance to WARP (warp.dev) when working with code in this repository.
 
-## Overview
+## Project Overview
 
-Acquisitions is an Express.js 5.x REST API using ES Modules, Drizzle ORM with Neon PostgreSQL, and Arcjet for security.
+Acquisitions is an Express.js 5.x REST API with JWT cookie-based authentication, PostgreSQL via Neon serverless, and Arcjet security middleware.
 
-## Development Commands
+## Commands
 
 ```bash
-# Start dev server (with watch mode)
-npm run dev
+# Development
+npm run dev              # Start with --watch (hot reload)
+npm run start            # Start without watch
 
-# Lint and format
-npm run lint
-npm run lint:fix
-npm run format
-npm run format:check
+# Testing
+npm test                 # Run all tests (Jest + Supertest)
+npm test -- --testPathPattern="app.test"   # Run specific test file
+npm test -- --testNamePattern="health"     # Run tests matching pattern
 
-# Database migrations
-npm run db:generate   # Generate migration from schema changes
-npm run db:migrate    # Run pending migrations
+# Linting & Formatting
+npm run lint             # Check for lint errors
+npm run lint:fix         # Auto-fix lint errors
+npm run format           # Format all files (Prettier)
+npm run format:check     # Check formatting
 
-# Docker development (uses Neon Local ephemeral branches)
-npm run dev:docker
-# Or directly:
-docker compose -f docker-compose.dev.yml up --build
+# Database (Drizzle ORM)
+npm run db:generate      # Generate migrations from schema changes
+npm run db:migrate       # Apply migrations to database
 
-# Docker production
-npm run prod:docker
+# Docker
+npm run dev:docker                                    # Start dev environment with Neon Local
+npm run prod:docker                                   # Start production environment
+docker compose -f docker-compose.dev.yml down -v      # Stop dev and cleanup
 ```
 
 ## Architecture
 
-### Layered Pattern
+### Request Flow
 ```
-Routes → Controllers → Services → Models
+Request → app.js middleware stack → securityMiddleware (Arcjet) → routes → controller → service → model/db
 ```
 
-- **Routes** (`src/routes/`): Define endpoints, wire to controllers
-- **Controllers** (`src/controllers/`): Handle HTTP request/response, validate input with Zod schemas, call services
-- **Services** (`src/services/`): Business logic, database operations via Drizzle
-- **Models** (`src/models/`): Drizzle table schemas (PostgreSQL)
-- **Validations** (`src/validations/`): Zod schemas for request validation
+### Directory Structure
+- `src/routes/` - Express route definitions, applies auth middleware
+- `src/controllers/` - Request handling, validation, response formatting
+- `src/services/` - Business logic, database operations
+- `src/models/` - Drizzle ORM table schemas
+- `src/validations/` - Zod schemas for request validation
+- `src/middleware/` - Auth (JWT verification, RBAC) and security (Arcjet)
+- `src/config/` - Database, Arcjet, and Winston logger setup
+- `src/utils/` - JWT wrapper, cookie helpers, formatters
 
-### Path Aliases
-Use Node.js subpath imports (defined in `package.json`):
+### Module Aliases
+Use Node.js subpath imports defined in package.json:
 ```javascript
-import logger from '#config/logger.js';
+import { db } from '#config/database.js';
 import { users } from '#models/user.model.js';
-import { signUpSchema } from '#validations/auth.validation.js';
+import { authenticateToken } from '#middleware/auth.middleware.js';
 ```
 
-Available aliases: `#config/*`, `#controllers/*`, `#middleware/*`, `#models/*`, `#routes/*`, `#services/*`, `#utils/*`, `#validations/*`
+### Authentication Pattern
+- JWT tokens stored in httpOnly cookies (not Authorization header)
+- `authenticateToken` middleware verifies token and populates `req.user`
+- `requireRole(['admin'])` middleware for role-based access control
+- Roles: `admin`, `user`, `guest` (unauthenticated)
 
-### Key Components
-
-**Database** (`src/config/database.js`): Drizzle + Neon serverless. In development, connects via Neon Local proxy; in production, connects directly to Neon Cloud.
-
-**Security** (`src/middleware/security.middleware.js`): Arcjet middleware with role-based rate limiting (guest: 5/min, user: 10/min, admin: 20/min), bot detection, and shield protection. Local IPs bypass bot detection.
-
-**Authentication**: JWT tokens stored in HTTP-only cookies. Use `jwttoken.sign()` / `jwttoken.verify()` from `#utils/jwt.js` and `cookies.set()` / `cookies.clear()` from `#utils/cookies.js`.
-
-**Logging** (`src/config/logger.js`): Winston logger. Console always; file logging (`logs/`) only in development.
+### Security (Arcjet)
+`securityMiddleware` in `src/middleware/security.middleware.js` applies:
+- Bot detection (allows search engines and preview bots)
+- Shield protection against common attacks
+- Role-based rate limiting (admin: 20/min, user: 10/min, guest: 5/min)
 
 ### Validation Pattern
-Controllers validate using Zod's `safeParse()` and return formatted errors:
+Controllers use Zod schemas with `safeParse`:
 ```javascript
 const result = schema.safeParse(req.body);
 if (!result.success) {
-  return res.status(400).json({
+  return res.status(400).json({ 
     error: 'Validation Failed',
     details: formatValidationErrors(result.error)
   });
 }
 ```
 
-## Environment
+### Database
+- Drizzle ORM with `@neondatabase/serverless` driver
+- Schema files in `src/models/*.js` using `pgTable`
+- Development uses Neon Local proxy (ephemeral branches)
+- Production connects directly to Neon Cloud
 
-Required env vars: `DATABASE_URL`, `ARCJET_KEY`, `JWT_SECRET`
+## Environment Variables
+Key variables (see `.env.example` and `DOCKER.md`):
+- `DATABASE_URL` - Postgres connection string
+- `JWT_SECRET` - JWT signing key
+- `ARCJET_KEY` - Arcjet API key
+- `NODE_ENV` - `development` or `production`
 
-Development additionally needs: `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_DB_PASSWORD`
-
-See `.env.example` and `DOCKER.md` for details.
-
-## Code Style
-
-- ES Modules (`import`/`export`)
-- 2-space indentation
-- Single quotes
-- Semicolons required
-- Unused vars prefixed with `_` are allowed
+## Testing
+Tests use Jest with `--experimental-vm-modules` for ESM support. Test files go in `tests/` directory and use Supertest for HTTP assertions against the Express app.
