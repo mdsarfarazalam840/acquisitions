@@ -136,26 +136,28 @@ docker compose -f docker-compose.prod.yml down
 
 ## Environment Variables Reference
 
-| Variable | Development | Production | Description |
-|----------|-------------|------------|-------------|
-| `NODE_ENV` | `development` | `production` | App environment |
-| `PORT` | `3000` | `3000` | Server port |
-| `DATABASE_URL` | Auto-configured | Required | Postgres connection string |
-| `NEON_API_KEY` | Required | Not used | Neon API key for local proxy |
-| `NEON_PROJECT_ID` | Required | Not used | Neon project identifier |
-| `NEON_DB_PASSWORD` | Required | Not used | Database password |
-| `ARCJET_KEY` | Required | Required | Arcjet security key |
-| `JWT_SECRET` | Required | Required | JWT signing secret |
-| `LOG_LEVEL` | `debug` | `info` | Logging verbosity |
+| Variable           | Development     | Production   | Description                  |
+| ------------------ | --------------- | ------------ | ---------------------------- |
+| `NODE_ENV`         | `development`   | `production` | App environment              |
+| `PORT`             | `3000`          | `3000`       | Server port                  |
+| `DATABASE_URL`     | Auto-configured | Required     | Postgres connection string   |
+| `NEON_API_KEY`     | Required        | Not used     | Neon API key for local proxy |
+| `NEON_PROJECT_ID`  | Required        | Not used     | Neon project identifier      |
+| `NEON_DB_PASSWORD` | Required        | Not used     | Database password            |
+| `ARCJET_KEY`       | Required        | Required     | Arcjet security key          |
+| `JWT_SECRET`       | Required        | Required     | JWT signing secret           |
+| `LOG_LEVEL`        | `debug`         | `info`       | Logging verbosity            |
 
 ## How DATABASE_URL Switching Works
 
 **Development**: The `DATABASE_URL` is automatically set in `docker-compose.dev.yml` to point to the Neon Local proxy:
+
 ```
 postgres://neondb_owner:${NEON_DB_PASSWORD}@neon-local:5432/neondb
 ```
 
 **Production**: The `DATABASE_URL` is read from `.env.production` and points directly to Neon Cloud:
+
 ```
 postgres://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
 ```
@@ -186,17 +188,21 @@ docker build --target production -t acquisitions:prod .
 ## Troubleshooting
 
 ### Neon Local won't start
+
 - Verify `NEON_API_KEY` and `NEON_PROJECT_ID` are correct
 - Check Docker logs: `docker compose -f docker-compose.dev.yml logs neon-local`
 
 ### Database connection refused
+
 - Ensure Neon Local is healthy before app starts (handled by `depends_on`)
 - Check the `DATABASE_URL` format matches your Neon credentials
 
 ### Permission denied errors
+
 - On Linux, you may need to run Docker commands with `sudo` or add your user to the `docker` group
 
 ### Container keeps restarting
+
 - Check logs for errors: `docker compose -f docker-compose.[dev|prod].yml logs`
 - Verify all required environment variables are set
 

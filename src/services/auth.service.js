@@ -4,9 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../config/database.js';
 import { users } from '../models/user.model.js';
 
-
-
-export const hashPassword = async (password) => {
+export const hashPassword = async password => {
   // Simulate password hashing
   try {
     return await bcrypt.hash(password, 10);
@@ -38,7 +36,7 @@ export const authenticateUser = async ({ email, password }) => {
     }
 
     const isPasswordValid = await comparePassword(password, user.password);
-        
+
     if (!isPasswordValid) {
       throw new Error('Invalid password');
     }
@@ -51,7 +49,7 @@ export const authenticateUser = async ({ email, password }) => {
   }
 };
 
-export const createUser = async ({name, email, password, role = 'user'}) => {
+export const createUser = async ({ name, email, password, role = 'user' }) => {
   try {
     const existingUser = await db
       .select()
@@ -70,8 +68,9 @@ export const createUser = async ({name, email, password, role = 'user'}) => {
         name,
         email,
         password: password_hash,
-        role
-      }).returning();
+        role,
+      })
+      .returning();
 
     logger.info(`User ${newUser.email} created successfully`);
     return newUser;

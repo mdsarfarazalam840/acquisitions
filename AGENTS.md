@@ -37,11 +37,13 @@ docker compose -f docker-compose.dev.yml down -v      # Stop dev and cleanup
 ## Architecture
 
 ### Request Flow
+
 ```
 Request → app.js middleware stack → securityMiddleware (Arcjet) → routes → controller → service → model/db
 ```
 
 ### Directory Structure
+
 - `src/routes/` - Express route definitions, applies auth middleware
 - `src/controllers/` - Request handling, validation, response formatting
 - `src/services/` - Business logic, database operations
@@ -52,7 +54,9 @@ Request → app.js middleware stack → securityMiddleware (Arcjet) → routes �
 - `src/utils/` - JWT wrapper, cookie helpers, formatters
 
 ### Module Aliases
+
 Use Node.js subpath imports defined in package.json:
+
 ```javascript
 import { db } from '#config/database.js';
 import { users } from '#models/user.model.js';
@@ -60,37 +64,45 @@ import { authenticateToken } from '#middleware/auth.middleware.js';
 ```
 
 ### Authentication Pattern
+
 - JWT tokens stored in httpOnly cookies (not Authorization header)
 - `authenticateToken` middleware verifies token and populates `req.user`
 - `requireRole(['admin'])` middleware for role-based access control
 - Roles: `admin`, `user`, `guest` (unauthenticated)
 
 ### Security (Arcjet)
+
 `securityMiddleware` in `src/middleware/security.middleware.js` applies:
+
 - Bot detection (allows search engines and preview bots)
 - Shield protection against common attacks
 - Role-based rate limiting (admin: 20/min, user: 10/min, guest: 5/min)
 
 ### Validation Pattern
+
 Controllers use Zod schemas with `safeParse`:
+
 ```javascript
 const result = schema.safeParse(req.body);
 if (!result.success) {
-  return res.status(400).json({ 
+  return res.status(400).json({
     error: 'Validation Failed',
-    details: formatValidationErrors(result.error)
+    details: formatValidationErrors(result.error),
   });
 }
 ```
 
 ### Database
+
 - Drizzle ORM with `@neondatabase/serverless` driver
 - Schema files in `src/models/*.js` using `pgTable`
 - Development uses Neon Local proxy (ephemeral branches)
 - Production connects directly to Neon Cloud
 
 ## Environment Variables
+
 Key variables (see `.env.example` and `DOCKER.md`):
+
 - `DATABASE_URL` - Postgres connection string
 - `JWT_SECRET` - JWT signing key
 - `ARCJET_KEY` - Arcjet API key
@@ -99,16 +111,20 @@ Key variables (see `.env.example` and `DOCKER.md`):
 ## Coding Conventions
 
 ### Style (enforced by ESLint)
+
 - Single quotes, 2-space indent, semicolons required
 - `prefer-const`, `no-var`, arrow callbacks
 - Unused args prefixed with `_` are allowed
 
 ### File Naming
+
 - `<resource>.controller.js`, `<resource>.service.js`, `<resource>.routes.js`
 - `<resource>.model.js` for Drizzle schemas, `<resource>.validation.js` for Zod schemas
 
 ### Error Handling Pattern
+
 Services throw errors with specific messages; controllers catch and map to HTTP status codes:
+
 ```javascript
 // Service throws
 throw new Error('User not found');
@@ -121,6 +137,7 @@ next(e); // Unknown errors pass to Express error handler
 ```
 
 ## Testing
+
 Tests use Jest with `--experimental-vm-modules` for ESM support. Test files go in `tests/` directory and use Supertest for HTTP assertions against the Express app.
 
 Coverage is collected automatically with 70% threshold for branches, functions, lines, and statements.

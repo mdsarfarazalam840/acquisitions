@@ -1,79 +1,119 @@
-import aj from '../config/arcjet.js'
-import logger from '../config/logger.js'
-import {slidingWindow} from '@arcjet/node'
+import aj from '../config/arcjet.js';
+import logger from '../config/logger.js';
+import { slidingWindow } from '@arcjet/node';
 
-// Normalize IPv6-mapped IPv4 (::ffff:x.x.x.x) to plain IPv4 
-const normalizeIP = (ip) => { 
-    if (!ip) return ''; 
-    return ip.startsWith('::ffff:') ? ip.replace('::ffff:', '') : ip; };
+// Normalize IPv6-mapped IPv4 (::ffff:x.x.x.x) to plain IPv4
+const normalizeIP = ip => {
+  if (!ip) return '';
+  return ip.startsWith('::ffff:') ? ip.replace('::ffff:', '') : ip;
+};
 
 // Helper to detect local/development IPs
-const isLocalIP = (ip) => {
-    const cleanIP = normalizeIP(ip);
-    return (
-        cleanIP === '127.0.0.1' ||
-        cleanIP === '::1' ||
-        cleanIP === 'localhost' ||
-        cleanIP.startsWith('172.') || // Docker networks
-        cleanIP.startsWith('192.168.') ||
-        cleanIP.startsWith('10.')
-        // ip === 'localhost'
-    );
+const isLocalIP = ip => {
+  const cleanIP = normalizeIP(ip);
+  return (
+    cleanIP === '127.0.0.1' ||
+    cleanIP === '::1' ||
+    cleanIP === 'localhost' ||
+    cleanIP.startsWith('172.') || // Docker networks
+    cleanIP.startsWith('192.168.') ||
+    cleanIP.startsWith('10.')
+    // ip === 'localhost'
+  );
 };
-    
-const securityMiddleware =  async (req, res, next)=> {
-    try{
-        const role = req.user?.role || 'guest';
-        
-        let limit;
-        let message;
-        
-        switch(role){
-            case 'admin': 
-                limit=20;
-                message = 'Admin request limit exceeded (20 per minute). Slow down.'
-            break;
-            case 'user': 
-                limit=10;
-                message = 'User request limit exceeded (10 per minute). Slow down.'
-            break;
-            case 'guest': 
-                limit=5;
-                message = 'Guest request limit exceeded (5 per minute). Slow down.'
-            break;
-            
-        }
-        
-        const client = aj.withRule(slidingWindow({ mode: 'LIVE', interval: '1m', max: limit, name: `${role}-rate-limit`}));
-        
-        const decision = await client.protect(req);
-        
-        if(decision.isDenied() && decision.reason.isBot()) {
-            if (isLocalIP(req.ip)) {
-                logger.info('Bot detection skipped for local IP', {ip: req.ip, userAgent: req.get('User-Agent'), path: req.path});
-            } else {
-                logger.warn('Bot request blocked', {ip : req.ip, userAgent: req.get('User-Agent'), path: req.path});
-                return res.status(403).json({ error: 'Forbidden', message: 'Automated requests are not allowed'});
-            }
-        }
-        
-        if(decision.isDenied() && decision.reason.isShield()) {
-            logger.warn('Shield Blocked request', {ip : req.ip, userAgent: req.get('User-Agent'), path: req.path, method: req.method});
-            
-            return res.status(403).json({ error: 'Forbidden', message: 'Request blocked by security Policy'});
-        }
-        
-        if(decision.isDenied() && decision.reason.isRateLimit()) {
-            logger.warn('Rate limit exceeded', {ip : req.ip, userAgent: req.get('User-Agent'), path: req.path});
-            
-            return res.status(403).json({ error: 'Forbidden', message: 'Too many requestss.....'});
-        }
-        next();
-        
-    }catch(e){
-        console.error('Arcjet middleware error:' , e);
-            res.status(500).json({ error: 'Internal server error', message: 'Something went wrong with security middleware'})
+
+const securityMiddleware = async (req, res, next) => {
+  try {
+    const role = req.user?.role || 'guest';
+
+    let limit;
+    let message;
+
+    switch (role) {
+      case 'admin':
+        limit = 20;
+        message = 'Admin request limit exceeded (20 per minute). Slow down.';
+        break;
+      case 'user':
+        limit = 10;
+        message = 'User request limit exceeded (10 per minute). Slow down.';
+        break;
+      case 'guest':
+        limit = 5;
+        message = 'Guest request limit exceeded (5 per minute). Slow down.';
+        break;
     }
-}
+
+    const client = aj.withRule(
+      slidingWindow({
+        mode: 'LIVE',
+        interval: '1m',
+        max: limit,
+        name: `${role}-rate-limit`,
+      })
+    );
+
+    const decision = await client.protect(req);
+
+    if (decision.isDenied() && decision.reason.isBot()) {
+      if (isLocalIP(req.ip)) {
+        logger.info('Bot detection skipped for local IP', {
+          ip: req.ip,
+          userAgent: req.get('User-Agent'),
+          path: req.path,
+        });
+      } else {
+        logger.warn('Bot request blocked', {
+          ip: req.ip,
+          userAgent: req.get('User-Agent'),
+          path: req.path,
+        });
+        return res
+          .status(403)
+          .json({
+            error: 'Forbidden',
+            message: 'Automated requests are not allowed',
+          });
+      }
+    }
+
+    if (decision.isDenied() && decision.reason.isShield()) {
+      logger.warn('Shield Blocked request', {
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        path: req.path,
+        method: req.method,
+      });
+
+      return res
+        .status(403)
+        .json({
+          error: 'Forbidden',
+          message: 'Request blocked by security Policy',
+        });
+    }
+
+    if (decision.isDenied() && decision.reason.isRateLimit()) {
+      logger.warn('Rate limit exceeded', {
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        path: req.path,
+      });
+
+      return res
+        .status(403)
+        .json({ error: 'Forbidden', message: 'Too many requestss.....' });
+    }
+    next();
+  } catch (e) {
+    console.error('Arcjet middleware error:', e);
+    res
+      .status(500)
+      .json({
+        error: 'Internal server error',
+        message: 'Something went wrong with security middleware',
+      });
+  }
+};
 
 export default securityMiddleware;

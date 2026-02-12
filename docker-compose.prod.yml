@@ -13,7 +13,7 @@ services:
       # DATABASE_URL is injected from .env.production or CI/CD secrets
       # No Neon Local proxy in production - connects directly to Neon Cloud
     ports:
-      - "${PORT:-3000}:3000"
+      - '${PORT:-3000}:3000'
     restart: always
     deploy:
       resources:

@@ -6,9 +6,9 @@ services:
     env_file:
       - .env.development
     ports:
-      - "5432:5432"
+      - '5432:5432'
     healthcheck:
-      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "5432"]
+      test: ['CMD', 'pg_isready', '-h', 'localhost', '-p', '5432']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -29,7 +29,7 @@ services:
       # Connect to Neon Local proxy within Docker network
       - DATABASE_URL=postgres://neondb_owner:${NEON_DB_PASSWORD}@neon-local:5432/neondb
     ports:
-      - "${PORT:-3000}:3000"
+      - '${PORT:-3000}:3000'
     volumes:
       # Mount source code for hot-reloading
       - ./src:/app/src:ro
