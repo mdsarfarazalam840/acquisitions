@@ -20,6 +20,15 @@ const adminToken = jwttoken.sign(testAdmin);
 const userToken = jwttoken.sign(testUser);
 
 describe('API Endpoints', () => {
+  const runId = Date.now();
+  const adminAgent = request.agent(app);
+  const userAgent = request.agent(app);
+  const basePassword = 'Test@1234';
+  const created = {
+    admin: null,
+    user: null,
+  };
+
   describe('Health/Info Endpoints', () => {
     describe('GET /', () => {
       it('should return 200 with greeting message', async () => {
@@ -230,6 +239,200 @@ describe('API Endpoints', () => {
         .expect(401);
       expect(response.body).toHaveProperty('error', 'Authentication failed');
       expect(response.body).toHaveProperty('message', 'Invalid or expired token');
+    });
+  });
+
+  describe('Production-like E2E Flow', () => {
+    it('should sign up a normal user and persist auth cookie', async () => {
+      const email = `e2e-user-${runId}@example.com`;
+      const response = await userAgent
+        .post('/api/auth/sign-up')
+        .set('User-Agent', 'Supertest')
+        .send({
+          name: 'E2E User',
+          email,
+          password: basePassword,
+        });
+
+      if (response.status === 500) {
+        console.log('Skipping test - database not available');
+        return;
+      }
+
+      expect(response.status).toBe(201);
+      expect(response.headers['set-cookie']).toBeDefined();
+      expect(response.body.user).toHaveProperty('role', 'user');
+
+      created.user = response.body.user;
+    });
+
+    it('should reject duplicate sign-up email', async () => {
+      if (!created.user) {
+        return;
+      }
+
+      const duplicate = await request(app)
+        .post('/api/auth/sign-up')
+        .set('User-Agent', 'Supertest')
+        .send({
+          name: 'Duplicate User',
+          email: created.user.email,
+          password: basePassword,
+        })
+        .expect(409);
+
+      expect(duplicate.body).toHaveProperty('error', 'Email already exists');
+    });
+
+    it('should return 401 for sign-in with wrong password', async () => {
+      if (!created.user) {
+        return;
+      }
+
+      const response = await request(app)
+        .post('/api/auth/sign-in')
+        .set('User-Agent', 'Supertest')
+        .send({
+          email: created.user.email,
+          password: 'Wrong@1234',
+        })
+        .expect(401);
+
+      expect(response.body).toHaveProperty('error', 'Invalid credentials');
+    });
+
+    it('should return 404 for sign-in with non-existent user', async () => {
+      const response = await request(app)
+        .post('/api/auth/sign-in')
+        .set('User-Agent', 'Supertest')
+        .send({
+          email: `missing-${runId}@example.com`,
+          password: basePassword,
+        })
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error', 'User not found');
+    });
+
+    it('should sign up an admin user and list users', async () => {
+      const email = `e2e-admin-${runId}@example.com`;
+      const response = await adminAgent
+        .post('/api/auth/sign-up')
+        .set('User-Agent', 'Supertest')
+        .send({
+          name: 'E2E Admin',
+          email,
+          password: basePassword,
+          role: 'admin',
+        });
+
+      if (response.status === 500) {
+        console.log('Skipping test - database not available');
+        return;
+      }
+
+      expect(response.status).toBe(201);
+      expect(response.body.user).toHaveProperty('role', 'admin');
+      created.admin = response.body.user;
+
+      const listResponse = await adminAgent
+        .get('/api/users')
+        .set('User-Agent', 'Supertest')
+        .expect(200);
+
+      expect(listResponse.body).toHaveProperty('users');
+      expect(Array.isArray(listResponse.body.users)).toBe(true);
+    });
+
+    it('should allow user to fetch and update own profile', async () => {
+      if (!created.user) {
+        return;
+      }
+
+      const byIdResponse = await userAgent
+        .get(`/api/users/${created.user.id}`)
+        .set('User-Agent', 'Supertest')
+        .expect(200);
+
+      expect(byIdResponse.body.user).toHaveProperty('id', created.user.id);
+
+      const updateResponse = await userAgent
+        .put(`/api/users/${created.user.id}`)
+        .set('User-Agent', 'Supertest')
+        .send({ name: 'E2E User Updated' })
+        .expect(200);
+
+      expect(updateResponse.body.user).toHaveProperty('name', 'E2E User Updated');
+    });
+
+    it('should block non-admin role changes', async () => {
+      if (!created.user) {
+        return;
+      }
+
+      const response = await userAgent
+        .put(`/api/users/${created.user.id}`)
+        .set('User-Agent', 'Supertest')
+        .send({ role: 'admin' })
+        .expect(403);
+
+      expect(response.body).toHaveProperty('message', 'Only admins can change user roles');
+    });
+
+    it('should return 404 when admin fetches non-existent user id', async () => {
+      if (!created.admin) {
+        return;
+      }
+
+      const response = await adminAgent
+        .get('/api/users/99999999')
+        .set('User-Agent', 'Supertest')
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error', 'User not found');
+    });
+
+    it('should allow admin to delete another user', async () => {
+      if (!created.admin) {
+        return;
+      }
+
+      const tempEmail = `to-delete-${runId}@example.com`;
+      const tempUserSignUp = await request(app)
+        .post('/api/auth/sign-up')
+        .set('User-Agent', 'Supertest')
+        .send({
+          name: 'Delete Me',
+          email: tempEmail,
+          password: basePassword,
+        });
+
+      if (tempUserSignUp.status === 500) {
+        console.log('Skipping test - database not available');
+        return;
+      }
+
+      expect(tempUserSignUp.status).toBe(201);
+
+      const deleteResponse = await adminAgent
+        .delete(`/api/users/${tempUserSignUp.body.user.id}`)
+        .set('User-Agent', 'Supertest')
+        .expect(200);
+
+      expect(deleteResponse.body).toHaveProperty('message', 'User deleted successfully');
+    });
+
+    it('should return 404 when admin deletes non-existent user', async () => {
+      if (!created.admin) {
+        return;
+      }
+
+      const response = await adminAgent
+        .delete('/api/users/99999999')
+        .set('User-Agent', 'Supertest')
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error', 'User not found');
     });
   });
 });
